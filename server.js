@@ -76,6 +76,19 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
+const projectSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    description: { type: String, required: true },
+    technologies: [string],
+    status: { type: String, default: 'active' },
+    githubLink: String,
+    liveLink: String,
+    imageUrl: String,
+    createdAt: { type: Date, default: Date.now }
+});
+
+const Project = mongoose.models.Project || mongoose.model('Project', projectSchema);
+
 // Helper: Get or Create Stats Document
 const getStatsDoc = async () => {
     let stats = await Stats.findOne();
@@ -163,7 +176,7 @@ app.post('/api/send-email', async (req, res) => {
     try {
         await transporter.sendMail(mailOptions);
     } catch (error) {
-        console.error('Error sending email: - server.js:166', error);
+        console.error('Error sending email: - server.js:179', error);
         return res.status(500).json({ error: 'Failed to send email.' });
     }
 
@@ -174,7 +187,7 @@ app.post('/api/send-email', async (req, res) => {
         stats.newMessages = await Message.countDocuments({ isRead: false });
         await addActivity(stats, `New message received from ${user_name}`, 'blue');
     } catch (dbErr) {
-        console.error('DB save failed (email was sent): - server.js:177', dbErr);
+        console.error('DB save failed (email was sent): - server.js:190', dbErr);
     }
 
     return res.status(200).json({ success: true, message: 'Email Sent Successfully!' });
@@ -188,7 +201,7 @@ app.post('/api/track/view', async (req, res) => {
         await stats.save();
         res.status(200).json({ success: true, totalViews: stats.totalViews });
     } catch (err) {
-        console.error('Track view error: - server.js:191', err);
+        console.error('Track view error: - server.js:204', err);
         res.status(500).json({ error: 'Failed to track view' });
     }
 });
@@ -201,7 +214,7 @@ app.post('/api/track/cv', async (req, res) => {
         await addActivity(stats, 'A visitor downloaded your CV', 'emerald');
         res.status(200).json({ success: true, cvDownloads: stats.cvDownloads });
     } catch (err) {
-        console.error('Track CV error: - server.js:204', err);
+        console.error('Track CV error: - server.js:217', err);
         res.status(500).json({ error: 'Failed to track CV download' });
     }
 });
@@ -214,7 +227,7 @@ app.post('/api/admin/login', async (req, res) => {
         const adminPass = process.env.ADMIN_PASSWORD;
 
         if (!adminUser || !adminPass || !process.env.JWT_SECRET) {
-            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:217');
+            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:230');
             return res.status(500).json({ success: false, message: 'Server configuration error' });
         }
 
@@ -229,7 +242,7 @@ app.post('/api/admin/login', async (req, res) => {
                 const stats = await getStatsDoc();
                 await addActivity(stats, 'Admin logged into the dashboard', 'teal');
             } catch (dbErr) {
-                console.error('Activity log failed: - server.js:232', dbErr);
+                console.error('Activity log failed: - server.js:245', dbErr);
             }
 
             return res.status(200).json({
@@ -244,7 +257,7 @@ app.post('/api/admin/login', async (req, res) => {
             message: 'Invalid Username or Password!'
         });
     } catch (err) {
-        console.error('Login error: - server.js:247', err);
+        console.error('Login error: - server.js:260', err);
         return res.status(500).json({ success: false, message: 'Login failed' });
     }
 });
@@ -255,8 +268,60 @@ app.get('/api/admin/overview', verifyAdmin, async (req, res) => {
         const stats = await getStatsDoc();
         res.status(200).json({ success: true, data: stats });
     } catch (err) {
-        console.error('Overview error: - server.js:258', err);
+        console.error('Overview error: - server.js:271', err);
         res.status(500).json({ error: 'Failed to fetch overview stats' });
+    }
+});
+
+// 6. Get All Projects
+app.get('/api/projects', async (req, res) => {
+    try {
+        const projects = await ProjectModel.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: projects });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch projects' });
+    }
+});
+
+// 7. Add New Project (Admin Only)
+app.post('/api/admin/projects', verifyAdmin, async (req, res) => {
+    try {
+        const { title, description, technologies, status, githubLink, liveLink, imageUrl } = req.body;
+        const techArray = typeof technologies === 'string' ? technologies.split(',').map(t => t.trim()) : technologies;
+
+        const newProject = await ProjectModel.create({
+            title,
+            description,
+            technologies: techArray,
+            status,
+            githubLink,
+            liveLink,
+            imageUrl
+        });
+
+        const stats = await getStatsDoc();
+        stats.activeProjects = await ProjectModel.countDocuments();
+        await addActivity(stats, `New project added: ${title}`, 'teal');
+
+        res.status(201).json({ success: true, data: newProject });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to create project' });
+    }
+});
+
+// 8. Delete Project (Admin Only)
+app.delete('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
+    try {
+        const project = await ProjectModel.findByIdAndDelete(req.params.id);
+        if (!project) return res.status(404).json({ error: 'Project not found' });
+
+        const stats = await getStatsDoc();
+        stats.activeProjects = await ProjectModel.countDocuments();
+        await addActivity(stats, `Project deleted: ${project.title}`, 'red');
+
+        res.status(200).json({ success: true, message: 'Project deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete project' });
     }
 });
 
@@ -265,7 +330,7 @@ app.get('/api/admin/overview', verifyAdmin, async (req, res) => {
 const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT} - server.js:268`);
+        console.log(`Server is running on port ${PORT} - server.js:333`);
     });
 }
 

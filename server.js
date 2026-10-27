@@ -76,9 +76,15 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);
 
+const PROJECT_CATEGORIES = [
+    'Web App', 'E-Commerce', 'Desktop App', 'Mobile App',
+    'IoT', 'AI / ML', 'Designing', 'Game', 'Other'
+];
+
 const projectSchema = new mongoose.Schema({
     title: { type: String, required: true },
     description: { type: String, required: true },
+    category: { type: String, enum: PROJECT_CATEGORIES, default: 'Other' },
     technologies: [String],
     status: { type: String, default: 'Active' },
     githubLink: String,
@@ -176,7 +182,7 @@ app.post('/api/send-email', async (req, res) => {
     try {
         await transporter.sendMail(mailOptions);
     } catch (error) {
-        console.error('Error sending email: - server.js:179', error);
+        console.error('Error sending email: - server.js:185', error);
         return res.status(500).json({ error: 'Failed to send email.' });
     }
 
@@ -187,7 +193,7 @@ app.post('/api/send-email', async (req, res) => {
         stats.newMessages = await Message.countDocuments({ isRead: false });
         await addActivity(stats, `New message received from ${user_name}`, 'blue');
     } catch (dbErr) {
-        console.error('DB save failed (email was sent): - server.js:190', dbErr);
+        console.error('DB save failed (email was sent): - server.js:196', dbErr);
     }
 
     return res.status(200).json({ success: true, message: 'Email Sent Successfully!' });
@@ -201,7 +207,7 @@ app.post('/api/track/view', async (req, res) => {
         await stats.save();
         res.status(200).json({ success: true, totalViews: stats.totalViews });
     } catch (err) {
-        console.error('Track view error: - server.js:204', err);
+        console.error('Track view error: - server.js:210', err);
         res.status(500).json({ error: 'Failed to track view' });
     }
 });
@@ -214,7 +220,7 @@ app.post('/api/track/cv', async (req, res) => {
         await addActivity(stats, 'A visitor downloaded your CV', 'emerald');
         res.status(200).json({ success: true, cvDownloads: stats.cvDownloads });
     } catch (err) {
-        console.error('Track CV error: - server.js:217', err);
+        console.error('Track CV error: - server.js:223', err);
         res.status(500).json({ error: 'Failed to track CV download' });
     }
 });
@@ -227,7 +233,7 @@ app.post('/api/admin/login', async (req, res) => {
         const adminPass = process.env.ADMIN_PASSWORD;
 
         if (!adminUser || !adminPass || !process.env.JWT_SECRET) {
-            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:230');
+            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:236');
             return res.status(500).json({ success: false, message: 'Server configuration error' });
         }
 
@@ -242,7 +248,7 @@ app.post('/api/admin/login', async (req, res) => {
                 const stats = await getStatsDoc();
                 await addActivity(stats, 'Admin logged into the dashboard', 'teal');
             } catch (dbErr) {
-                console.error('Activity log failed: - server.js:245', dbErr);
+                console.error('Activity log failed: - server.js:251', dbErr);
             }
 
             return res.status(200).json({
@@ -257,7 +263,7 @@ app.post('/api/admin/login', async (req, res) => {
             message: 'Invalid Username or Password!'
         });
     } catch (err) {
-        console.error('Login error: - server.js:260', err);
+        console.error('Login error: - server.js:266', err);
         return res.status(500).json({ success: false, message: 'Login failed' });
     }
 });
@@ -268,59 +274,110 @@ app.get('/api/admin/overview', verifyAdmin, async (req, res) => {
         const stats = await getStatsDoc();
         res.status(200).json({ success: true, data: stats });
     } catch (err) {
-        console.error('Overview error: - server.js:271', err);
+        console.error('Overview error: - server.js:277', err);
         res.status(500).json({ error: 'Failed to fetch overview stats' });
     }
 });
 
-// 6. Get All Projects
+// 6. Get All Projects (Public)
 app.get('/api/projects', async (req, res) => {
     try {
         const projects = await ProjectModel.find().sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: projects });
     } catch (err) {
+        console.error('Fetch projects error: - server.js:288', err);
         res.status(500).json({ error: 'Failed to fetch projects' });
     }
 });
 
+const toTechArray = (technologies) =>
+    typeof technologies === 'string'
+        ? technologies.split(',').map(t => t.trim()).filter(Boolean)
+        : (technologies || []);
+
 // 7. Add New Project (Admin Only)
 app.post('/api/admin/projects', verifyAdmin, async (req, res) => {
     try {
-        const { title, description, technologies, status, githubLink, liveLink, imageUrl } = req.body;
-        const techArray = typeof technologies === 'string' ? technologies.split(',').map(t => t.trim()) : technologies;
+        const { title, description, category, technologies, status, githubLink, liveLink, imageUrl } = req.body;
 
         const newProject = await ProjectModel.create({
             title,
             description,
-            technologies: techArray,
+            category: PROJECT_CATEGORIES.includes(category) ? category : 'Other',
+            technologies: toTechArray(technologies),
             status,
             githubLink,
             liveLink,
             imageUrl
         });
 
-        const stats = await getStatsDoc();
-        stats.activeProjects = await ProjectModel.countDocuments();
-        await addActivity(stats, `New project added: ${title}`, 'teal');
+        try {
+            const stats = await getStatsDoc();
+            stats.activeProjects = await ProjectModel.countDocuments();
+            await addActivity(stats, `New project added: ${title}`, 'teal');
+        } catch (e) {
+            console.error('Stats update failed: - server.js:319', e);
+        }
 
         res.status(201).json({ success: true, data: newProject });
     } catch (err) {
+        console.error('Create project error: - server.js:324', err);
         res.status(500).json({ error: 'Failed to create project' });
     }
 });
 
-// 8. Delete Project (Admin Only)
+// 8. Update Project (Admin Only)
+app.put('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
+    try {
+        const { title, description, category, technologies, status, githubLink, liveLink, imageUrl } = req.body;
+
+        const updated = await ProjectModel.findByIdAndUpdate(
+            req.params.id,
+            {
+                title,
+                description,
+                category: PROJECT_CATEGORIES.includes(category) ? category : 'Other',
+                technologies: toTechArray(technologies),
+                status,
+                githubLink,
+                liveLink,
+                imageUrl
+            },
+            { new: true, runValidators: true }
+        );
+        if (!updated) return res.status(404).json({ error: 'Project not found' });
+
+        try {
+            const stats = await getStatsDoc();
+            await addActivity(stats, `Project updated: ${updated.title}`, 'blue');
+        } catch (e) {
+            console.error('Stats update failed: - server.js:354', e);
+        }
+
+        res.status(200).json({ success: true, data: updated });
+    } catch (err) {
+        console.error('Update project error: - server.js:359', err);
+        res.status(500).json({ error: 'Failed to update project' });
+    }
+});
+
+// 9. Delete Project (Admin Only)
 app.delete('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
     try {
         const project = await ProjectModel.findByIdAndDelete(req.params.id);
         if (!project) return res.status(404).json({ error: 'Project not found' });
 
-        const stats = await getStatsDoc();
-        stats.activeProjects = await ProjectModel.countDocuments();
-        await addActivity(stats, `Project deleted: ${project.title}`, 'red');
+        try {
+            const stats = await getStatsDoc();
+            stats.activeProjects = await ProjectModel.countDocuments();
+            await addActivity(stats, `Project deleted: ${project.title}`, 'red');
+        } catch (e) {
+            console.error('Stats update failed: - server.js:375', e);
+        }
 
         res.status(200).json({ success: true, message: 'Project deleted successfully' });
     } catch (err) {
+        console.error('Delete project error: - server.js:380', err);
         res.status(500).json({ error: 'Failed to delete project' });
     }
 });
@@ -330,7 +387,7 @@ app.delete('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
 const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT} - server.js:333`);
+        console.log(`Server is running on port ${PORT} - server.js:390`);
     });
 }
 

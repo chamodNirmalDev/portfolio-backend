@@ -16,7 +16,7 @@ if (!process.env.VERCEL) {
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '4mb' }));
 
 app.use(cors({
     origin: ['http://localhost:5173', 'https://portfolio-by-chamod-nirmal.vercel.app']
@@ -79,15 +79,15 @@ const Message = mongoose.models.Message || mongoose.model('Message', messageSche
 const projectSchema = new mongoose.Schema({
     title: { type: String, required: true },
     description: { type: String, required: true },
-    technologies: [string],
-    status: { type: String, default: 'active' },
+    technologies: [String],
+    status: { type: String, default: 'Active' },
     githubLink: String,
     liveLink: String,
     imageUrl: String,
     createdAt: { type: Date, default: Date.now }
 });
 
-const Project = mongoose.models.Project || mongoose.model('Project', projectSchema);
+const ProjectModel = mongoose.models.Project || mongoose.model('Project', projectSchema);
 
 // Helper: Get or Create Stats Document
 const getStatsDoc = async () => {

@@ -9,7 +9,6 @@ import dns from 'node:dns';
 dotenv.config();
 
 // ශ්‍රී ලංකාවේ ISP DNS වල SRV lookup ප්‍රශ්නය local එකේදී විතරක් විසඳන්න.
-// Vercel එකේදී මේක අවශ්‍ය නැහැ.
 if (!process.env.VERCEL) {
     dns.setServers(['8.8.8.8', '1.1.1.1']);
 }
@@ -32,17 +31,16 @@ const connectDB = async () => {
         serverSelectionTimeoutMS: 8000
     });
     isConnected = true;
-    console.log('✅ Connected to MongoDB Atlas! - server.js:35');
+    console.log('✅ Connected to MongoDB Atlas! - server.js:34');
 };
 
-// හැම request එකකටම කලින් DB connection එක ready බව තහවුරු කරනවා
 app.use(async (req, res, next) => {
     try {
         await connectDB();
         next();
     } catch (err) {
         isConnected = false;
-        console.error('❌ MongoDB Connection Error: - server.js:45', err);
+        console.error('❌ MongoDB Connection Error: - server.js:43', err);
         res.status(500).json({ error: 'Database connection failed' });
     }
 });
@@ -95,6 +93,24 @@ const projectSchema = new mongoose.Schema({
 
 const ProjectModel = mongoose.models.Project || mongoose.model('Project', projectSchema);
 
+// --- Skill Model & Schema ---
+const SKILL_CATEGORIES = [
+    'Web Based', 'Frontend', 'Backend', 'Mobile Dev',
+    'Desktop App', 'Database', 'AI & ML', 'Robotics & IoT', 'Tools'
+];
+
+const skillSchema = new mongoose.Schema({
+    name: { type: String, required: true, trim: true },
+    categories: [{ type: String, enum: SKILL_CATEGORIES }],
+    proficiency: { type: Number, default: 85, min: 0, max: 100 },
+    icon: { type: String, default: 'FaCode' },
+    color: { type: String, default: 'text-teal-500' },
+    desc: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const SkillModel = mongoose.models.Skill || mongoose.model('Skill', skillSchema);
+
 // Helper: Get or Create Stats Document
 const getStatsDoc = async () => {
     let stats = await Stats.findOne();
@@ -115,7 +131,6 @@ const addActivity = async (stats, title, color = 'teal') => {
     await stats.save();
 };
 
-// Helper: HTML escape (email එකට user input දාද්දී ආරක්ෂාවට)
 const escapeHtml = (str = '') =>
     String(str)
         .replace(/&/g, '&amp;')
@@ -182,18 +197,17 @@ app.post('/api/send-email', async (req, res) => {
     try {
         await transporter.sendMail(mailOptions);
     } catch (error) {
-        console.error('Error sending email: - server.js:185', error);
+        console.error('Error sending email: - server.js:200', error);
         return res.status(500).json({ error: 'Failed to send email.' });
     }
 
-    // Mail එක ගියා. DB save එක fail වුණත් user ට error එකක් පෙන්නන්නේ නැහැ.
     try {
         await Message.create({ user_name, user_email, message });
         const stats = await getStatsDoc();
         stats.newMessages = await Message.countDocuments({ isRead: false });
         await addActivity(stats, `New message received from ${user_name}`, 'blue');
     } catch (dbErr) {
-        console.error('DB save failed (email was sent): - server.js:196', dbErr);
+        console.error('DB save failed (email was sent): - server.js:210', dbErr);
     }
 
     return res.status(200).json({ success: true, message: 'Email Sent Successfully!' });
@@ -207,7 +221,7 @@ app.post('/api/track/view', async (req, res) => {
         await stats.save();
         res.status(200).json({ success: true, totalViews: stats.totalViews });
     } catch (err) {
-        console.error('Track view error: - server.js:210', err);
+        console.error('Track view error: - server.js:224', err);
         res.status(500).json({ error: 'Failed to track view' });
     }
 });
@@ -220,7 +234,7 @@ app.post('/api/track/cv', async (req, res) => {
         await addActivity(stats, 'A visitor downloaded your CV', 'emerald');
         res.status(200).json({ success: true, cvDownloads: stats.cvDownloads });
     } catch (err) {
-        console.error('Track CV error: - server.js:223', err);
+        console.error('Track CV error: - server.js:237', err);
         res.status(500).json({ error: 'Failed to track CV download' });
     }
 });
@@ -233,7 +247,7 @@ app.post('/api/admin/login', async (req, res) => {
         const adminPass = process.env.ADMIN_PASSWORD;
 
         if (!adminUser || !adminPass || !process.env.JWT_SECRET) {
-            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:236');
+            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:250');
             return res.status(500).json({ success: false, message: 'Server configuration error' });
         }
 
@@ -248,7 +262,7 @@ app.post('/api/admin/login', async (req, res) => {
                 const stats = await getStatsDoc();
                 await addActivity(stats, 'Admin logged into the dashboard', 'teal');
             } catch (dbErr) {
-                console.error('Activity log failed: - server.js:251', dbErr);
+                console.error('Activity log failed: - server.js:265', dbErr);
             }
 
             return res.status(200).json({
@@ -263,7 +277,7 @@ app.post('/api/admin/login', async (req, res) => {
             message: 'Invalid Username or Password!'
         });
     } catch (err) {
-        console.error('Login error: - server.js:266', err);
+        console.error('Login error: - server.js:280', err);
         return res.status(500).json({ success: false, message: 'Login failed' });
     }
 });
@@ -274,10 +288,12 @@ app.get('/api/admin/overview', verifyAdmin, async (req, res) => {
         const stats = await getStatsDoc();
         res.status(200).json({ success: true, data: stats });
     } catch (err) {
-        console.error('Overview error: - server.js:277', err);
+        console.error('Overview error: - server.js:291', err);
         res.status(500).json({ error: 'Failed to fetch overview stats' });
     }
 });
+
+// --- PROJECTS ROUTES ---
 
 // 6. Get All Projects (Public)
 app.get('/api/projects', async (req, res) => {
@@ -285,7 +301,7 @@ app.get('/api/projects', async (req, res) => {
         const projects = await ProjectModel.find().sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: projects });
     } catch (err) {
-        console.error('Fetch projects error: - server.js:288', err);
+        console.error('Fetch projects error: - server.js:304', err);
         res.status(500).json({ error: 'Failed to fetch projects' });
     }
 });
@@ -316,12 +332,12 @@ app.post('/api/admin/projects', verifyAdmin, async (req, res) => {
             stats.activeProjects = await ProjectModel.countDocuments();
             await addActivity(stats, `New project added: ${title}`, 'teal');
         } catch (e) {
-            console.error('Stats update failed: - server.js:319', e);
+            console.error('Stats update failed: - server.js:335', e);
         }
 
         res.status(201).json({ success: true, data: newProject });
     } catch (err) {
-        console.error('Create project error: - server.js:324', err);
+        console.error('Create project error: - server.js:340', err);
         res.status(500).json({ error: 'Failed to create project' });
     }
 });
@@ -351,12 +367,12 @@ app.put('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
             const stats = await getStatsDoc();
             await addActivity(stats, `Project updated: ${updated.title}`, 'blue');
         } catch (e) {
-            console.error('Stats update failed: - server.js:354', e);
+            console.error('Stats update failed: - server.js:370', e);
         }
 
         res.status(200).json({ success: true, data: updated });
     } catch (err) {
-        console.error('Update project error: - server.js:359', err);
+        console.error('Update project error: - server.js:375', err);
         res.status(500).json({ error: 'Failed to update project' });
     }
 });
@@ -372,22 +388,133 @@ app.delete('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
             stats.activeProjects = await ProjectModel.countDocuments();
             await addActivity(stats, `Project deleted: ${project.title}`, 'red');
         } catch (e) {
-            console.error('Stats update failed: - server.js:375', e);
+            console.error('Stats update failed: - server.js:391', e);
         }
 
         res.status(200).json({ success: true, message: 'Project deleted successfully' });
     } catch (err) {
-        console.error('Delete project error: - server.js:380', err);
+        console.error('Delete project error: - server.js:396', err);
         res.status(500).json({ error: 'Failed to delete project' });
     }
 });
 
+// --- SKILLS ROUTES ---
+
+const toCategoryArray = (categories) => {
+    if (Array.isArray(categories)) return categories;
+    if (typeof categories === 'string') {
+        return categories.split(',').map(c => c.trim()).filter(Boolean);
+    }
+    return [];
+};
+
+// 10. Get All Skills (Public)
+app.get('/api/skills', async (req, res) => {
+    try {
+        const skills = await SkillModel.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: skills });
+    } catch (err) {
+        console.error('Fetch skills error: - server.js:417', err);
+        res.status(500).json({ error: 'Failed to fetch skills' });
+    }
+});
+
+// 11. Add New Skill (Admin Only)
+app.post('/api/admin/skills', verifyAdmin, async (req, res) => {
+    try {
+        const { name, categories, proficiency, icon, color, desc } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Skill name is required' });
+        }
+
+        const validCategories = toCategoryArray(categories).filter(c => SKILL_CATEGORIES.includes(c));
+
+        const newSkill = await SkillModel.create({
+            name,
+            categories: validCategories.length ? validCategories : ['Tools'],
+            proficiency: Number(proficiency) || 85,
+            icon: icon || 'FaCode',
+            color: color || 'text-teal-500',
+            desc: desc || ''
+        });
+
+        try {
+            const stats = await getStatsDoc();
+            stats.techStackCount = await SkillModel.countDocuments();
+            await addActivity(stats, `New skill added: ${name}`, 'teal');
+        } catch (e) {
+            console.error('Stats update failed: - server.js:447', e);
+        }
+
+        res.status(201).json({ success: true, data: newSkill });
+    } catch (err) {
+        console.error('Create skill error: - server.js:452', err);
+        res.status(500).json({ error: 'Failed to create skill' });
+    }
+});
+
+// 12. Update Skill (Admin Only)
+app.put('/api/admin/skills/:id', verifyAdmin, async (req, res) => {
+    try {
+        const { name, categories, proficiency, icon, color, desc } = req.body;
+        const validCategories = toCategoryArray(categories).filter(c => SKILL_CATEGORIES.includes(c));
+
+        const updated = await SkillModel.findByIdAndUpdate(
+            req.params.id,
+            {
+                name,
+                categories: validCategories.length ? validCategories : ['Tools'],
+                proficiency: Number(proficiency) || 85,
+                icon,
+                color,
+                desc
+            },
+            { new: true, runValidators: true }
+        );
+
+        if (!updated) return res.status(404).json({ error: 'Skill not found' });
+
+        try {
+            const stats = await getStatsDoc();
+            await addActivity(stats, `Skill updated: ${updated.name}`, 'blue');
+        } catch (e) {
+            console.error('Stats update failed: - server.js:482', e);
+        }
+
+        res.status(200).json({ success: true, data: updated });
+    } catch (err) {
+        console.error('Update skill error: - server.js:487', err);
+        res.status(500).json({ error: 'Failed to update skill' });
+    }
+});
+
+// 13. Delete Skill (Admin Only)
+app.delete('/api/admin/skills/:id', verifyAdmin, async (req, res) => {
+    try {
+        const skill = await SkillModel.findByIdAndDelete(req.params.id);
+        if (!skill) return res.status(404).json({ error: 'Skill not found' });
+
+        try {
+            const stats = await getStatsDoc();
+            stats.techStackCount = await SkillModel.countDocuments();
+            await addActivity(stats, `Skill deleted: ${skill.name}`, 'red');
+        } catch (e) {
+            console.error('Stats update failed: - server.js:503', e);
+        }
+
+        res.status(200).json({ success: true, message: 'Skill deleted successfully' });
+    } catch (err) {
+        console.error('Delete skill error: - server.js:508', err);
+        res.status(500).json({ error: 'Failed to delete skill' });
+    }
+});
+
 // --- Server Start ---
-// Local: app.listen. Vercel: app එක export කරනවා.
 const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT} - server.js:390`);
+        console.log(`Server is running on port ${PORT} - server.js:517`);
     });
 }
 

@@ -111,6 +111,40 @@ const skillSchema = new mongoose.Schema({
 
 const SkillModel = mongoose.models.Skill || mongoose.model('Skill', skillSchema);
 
+// --- Experience / Education Schema & Model ---
+const timelineSchema = new mongoose.Schema({
+    type: { type: String, enum: ['experience', 'education'], required: true },
+    title: { type: String, required: true },
+    organization: { type: String, required: true },
+    startDate: { type: String, default: '' },
+    endDate: { type: String, default: '' },
+    duration: { type: String, default: '' },
+    description: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const TimelineModel = mongoose.models.Timeline || mongoose.model('Timeline', timelineSchema);
+
+// --- Certificate Schema & Model ---
+const certificateSchema = new mongoose.Schema({
+    title: { type: String, required: true },
+    issuer: { type: String, required: true },
+    date: { type: String, default: '' },
+    category: { type: String, enum: ['Education', 'Professional', 'Language'], default: 'Professional' },
+    status: { type: String, enum: ['Completed', 'In Progress'], default: 'Completed' },
+    credentialId: { type: String, default: '' },
+    credentials: [
+        {
+            label: String,
+            url: String,
+            type: { type: String, default: 'link' } // 'link' හෝ 'image'
+        }
+    ],
+    createdAt: { type: Date, default: Date.now }
+});
+
+const CertificateModel = mongoose.models.Certificate || mongoose.model('Certificate', certificateSchema);
+
 // Helper: Get or Create Stats Document
 const getStatsDoc = async () => {
     let stats = await Stats.findOne();
@@ -197,7 +231,7 @@ app.post('/api/send-email', async (req, res) => {
     try {
         await transporter.sendMail(mailOptions);
     } catch (error) {
-        console.error('Error sending email: - server.js:200', error);
+        console.error('Error sending email: - server.js:234', error);
         return res.status(500).json({ error: 'Failed to send email.' });
     }
 
@@ -207,7 +241,7 @@ app.post('/api/send-email', async (req, res) => {
         stats.newMessages = await Message.countDocuments({ isRead: false });
         await addActivity(stats, `New message received from ${user_name}`, 'blue');
     } catch (dbErr) {
-        console.error('DB save failed (email was sent): - server.js:210', dbErr);
+        console.error('DB save failed (email was sent): - server.js:244', dbErr);
     }
 
     return res.status(200).json({ success: true, message: 'Email Sent Successfully!' });
@@ -221,7 +255,7 @@ app.post('/api/track/view', async (req, res) => {
         await stats.save();
         res.status(200).json({ success: true, totalViews: stats.totalViews });
     } catch (err) {
-        console.error('Track view error: - server.js:224', err);
+        console.error('Track view error: - server.js:258', err);
         res.status(500).json({ error: 'Failed to track view' });
     }
 });
@@ -234,7 +268,7 @@ app.post('/api/track/cv', async (req, res) => {
         await addActivity(stats, 'A visitor downloaded your CV', 'emerald');
         res.status(200).json({ success: true, cvDownloads: stats.cvDownloads });
     } catch (err) {
-        console.error('Track CV error: - server.js:237', err);
+        console.error('Track CV error: - server.js:271', err);
         res.status(500).json({ error: 'Failed to track CV download' });
     }
 });
@@ -247,7 +281,7 @@ app.post('/api/admin/login', async (req, res) => {
         const adminPass = process.env.ADMIN_PASSWORD;
 
         if (!adminUser || !adminPass || !process.env.JWT_SECRET) {
-            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:250');
+            console.error('ADMIN_USERNAME / ADMIN_PASSWORD / JWT_SECRET env variables missing - server.js:284');
             return res.status(500).json({ success: false, message: 'Server configuration error' });
         }
 
@@ -262,7 +296,7 @@ app.post('/api/admin/login', async (req, res) => {
                 const stats = await getStatsDoc();
                 await addActivity(stats, 'Admin logged into the dashboard', 'teal');
             } catch (dbErr) {
-                console.error('Activity log failed: - server.js:265', dbErr);
+                console.error('Activity log failed: - server.js:299', dbErr);
             }
 
             return res.status(200).json({
@@ -277,7 +311,7 @@ app.post('/api/admin/login', async (req, res) => {
             message: 'Invalid Username or Password!'
         });
     } catch (err) {
-        console.error('Login error: - server.js:280', err);
+        console.error('Login error: - server.js:314', err);
         return res.status(500).json({ success: false, message: 'Login failed' });
     }
 });
@@ -288,7 +322,7 @@ app.get('/api/admin/overview', verifyAdmin, async (req, res) => {
         const stats = await getStatsDoc();
         res.status(200).json({ success: true, data: stats });
     } catch (err) {
-        console.error('Overview error: - server.js:291', err);
+        console.error('Overview error: - server.js:325', err);
         res.status(500).json({ error: 'Failed to fetch overview stats' });
     }
 });
@@ -301,7 +335,7 @@ app.get('/api/projects', async (req, res) => {
         const projects = await ProjectModel.find().sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: projects });
     } catch (err) {
-        console.error('Fetch projects error: - server.js:304', err);
+        console.error('Fetch projects error: - server.js:338', err);
         res.status(500).json({ error: 'Failed to fetch projects' });
     }
 });
@@ -332,12 +366,12 @@ app.post('/api/admin/projects', verifyAdmin, async (req, res) => {
             stats.activeProjects = await ProjectModel.countDocuments();
             await addActivity(stats, `New project added: ${title}`, 'teal');
         } catch (e) {
-            console.error('Stats update failed: - server.js:335', e);
+            console.error('Stats update failed: - server.js:369', e);
         }
 
         res.status(201).json({ success: true, data: newProject });
     } catch (err) {
-        console.error('Create project error: - server.js:340', err);
+        console.error('Create project error: - server.js:374', err);
         res.status(500).json({ error: 'Failed to create project' });
     }
 });
@@ -367,12 +401,12 @@ app.put('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
             const stats = await getStatsDoc();
             await addActivity(stats, `Project updated: ${updated.title}`, 'blue');
         } catch (e) {
-            console.error('Stats update failed: - server.js:370', e);
+            console.error('Stats update failed: - server.js:404', e);
         }
 
         res.status(200).json({ success: true, data: updated });
     } catch (err) {
-        console.error('Update project error: - server.js:375', err);
+        console.error('Update project error: - server.js:409', err);
         res.status(500).json({ error: 'Failed to update project' });
     }
 });
@@ -388,12 +422,12 @@ app.delete('/api/admin/projects/:id', verifyAdmin, async (req, res) => {
             stats.activeProjects = await ProjectModel.countDocuments();
             await addActivity(stats, `Project deleted: ${project.title}`, 'red');
         } catch (e) {
-            console.error('Stats update failed: - server.js:391', e);
+            console.error('Stats update failed: - server.js:425', e);
         }
 
         res.status(200).json({ success: true, message: 'Project deleted successfully' });
     } catch (err) {
-        console.error('Delete project error: - server.js:396', err);
+        console.error('Delete project error: - server.js:430', err);
         res.status(500).json({ error: 'Failed to delete project' });
     }
 });
@@ -414,7 +448,7 @@ app.get('/api/skills', async (req, res) => {
         const skills = await SkillModel.find().sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: skills });
     } catch (err) {
-        console.error('Fetch skills error: - server.js:417', err);
+        console.error('Fetch skills error: - server.js:451', err);
         res.status(500).json({ error: 'Failed to fetch skills' });
     }
 });
@@ -444,12 +478,12 @@ app.post('/api/admin/skills', verifyAdmin, async (req, res) => {
             stats.techStackCount = await SkillModel.countDocuments();
             await addActivity(stats, `New skill added: ${name}`, 'teal');
         } catch (e) {
-            console.error('Stats update failed: - server.js:447', e);
+            console.error('Stats update failed: - server.js:481', e);
         }
 
         res.status(201).json({ success: true, data: newSkill });
     } catch (err) {
-        console.error('Create skill error: - server.js:452', err);
+        console.error('Create skill error: - server.js:486', err);
         res.status(500).json({ error: 'Failed to create skill' });
     }
 });
@@ -479,12 +513,12 @@ app.put('/api/admin/skills/:id', verifyAdmin, async (req, res) => {
             const stats = await getStatsDoc();
             await addActivity(stats, `Skill updated: ${updated.name}`, 'blue');
         } catch (e) {
-            console.error('Stats update failed: - server.js:482', e);
+            console.error('Stats update failed: - server.js:516', e);
         }
 
         res.status(200).json({ success: true, data: updated });
     } catch (err) {
-        console.error('Update skill error: - server.js:487', err);
+        console.error('Update skill error: - server.js:521', err);
         res.status(500).json({ error: 'Failed to update skill' });
     }
 });
@@ -500,12 +534,12 @@ app.delete('/api/admin/skills/:id', verifyAdmin, async (req, res) => {
             stats.techStackCount = await SkillModel.countDocuments();
             await addActivity(stats, `Skill deleted: ${skill.name}`, 'red');
         } catch (e) {
-            console.error('Stats update failed: - server.js:503', e);
+            console.error('Stats update failed: - server.js:537', e);
         }
 
         res.status(200).json({ success: true, message: 'Skill deleted successfully' });
     } catch (err) {
-        console.error('Delete skill error: - server.js:508', err);
+        console.error('Delete skill error: - server.js:542', err);
         res.status(500).json({ error: 'Failed to delete skill' });
     }
 });
@@ -519,7 +553,7 @@ app.get('/api/admin/messages', verifyAdmin, async (req, res) => {
         const unreadCount = await Message.countDocuments({ isRead: false });
         res.status(200).json({ success: true, data: messages, unreadCount });
     } catch (err) {
-        console.error('Fetch messages error: - server.js:522', err);
+        console.error('Fetch messages error: - server.js:556', err);
         res.status(500).json({ error: 'Failed to fetch messages' });
     }
 });
@@ -540,7 +574,7 @@ app.patch('/api/admin/messages/:id/read', verifyAdmin, async (req, res) => {
 
         res.status(200).json({ success: true, data: message, unreadCount: stats.newMessages });
     } catch (err) {
-        console.error('Mark read error: - server.js:543', err);
+        console.error('Mark read error: - server.js:577', err);
         res.status(500).json({ error: 'Failed to update message status' });
     }
 });
@@ -557,8 +591,144 @@ app.delete('/api/admin/messages/:id', verifyAdmin, async (req, res) => {
 
         res.status(200).json({ success: true, message: 'Message deleted successfully', unreadCount: stats.newMessages });
     } catch (err) {
-        console.error('Delete message error: - server.js:560', err);
+        console.error('Delete message error: - server.js:594', err);
         res.status(500).json({ error: 'Failed to delete message' });
+    }
+});
+
+// --- TIMELINE (Experience & Education) ROUTES ---
+
+// Get All Timeline records (Public)
+app.get('/api/timeline', async (req, res) => {
+    try {
+        const records = await TimelineModel.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: records });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch timeline records' });
+    }
+});
+
+// Add Timeline record (Admin)
+app.post('/api/admin/timeline', verifyAdmin, async (req, res) => {
+    try {
+        const { type, title, organization, startDate, endDate, description } = req.body;
+        const duration = startDate && endDate ? `${startDate} - ${endDate}` : startDate || endDate || '';
+        
+        const newRecord = await TimelineModel.create({
+            type,
+            title,
+            organization,
+            startDate,
+            endDate,
+            duration,
+            description
+        });
+
+        const stats = await getStatsDoc();
+        await addActivity(stats, `Added new ${type}: ${title}`, 'teal');
+
+        res.status(201).json({ success: true, data: newRecord });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to create record' });
+    }
+});
+
+// Update Timeline record (Admin)
+app.put('/api/admin/timeline/:id', verifyAdmin, async (req, res) => {
+    try {
+        const { type, title, organization, startDate, endDate, description } = req.body;
+        const duration = startDate && endDate ? `${startDate} - ${endDate}` : startDate || endDate || '';
+
+        const updated = await TimelineModel.findByIdAndUpdate(
+            req.params.id,
+            { type, title, organization, startDate, endDate, duration, description },
+            { new: true, runValidators: true }
+        );
+        if (!updated) return res.status(404).json({ error: 'Record not found' });
+
+        res.status(200).json({ success: true, data: updated });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update record' });
+    }
+});
+
+// Delete Timeline record (Admin)
+app.delete('/api/admin/timeline/:id', verifyAdmin, async (req, res) => {
+    try {
+        const record = await TimelineModel.findByIdAndDelete(req.params.id);
+        if (!record) return res.status(404).json({ error: 'Record not found' });
+
+        const stats = await getStatsDoc();
+        await addActivity(stats, `Deleted ${record.type}: ${record.title}`, 'red');
+
+        res.status(200).json({ success: true, message: 'Record deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete record' });
+    }
+});
+
+// --- CERTIFICATES ROUTES ---
+
+// Get All Certificates (Public)
+app.get('/api/certificates', async (req, res) => {
+    try {
+        const certs = await CertificateModel.find().sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: certs });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch certificates' });
+    }
+});
+
+// Add Certificate (Admin)
+app.post('/api/admin/certificates', verifyAdmin, async (req, res) => {
+    try {
+        const { title, issuer, date, category, status, credentialId, credentials } = req.body;
+        const newCert = await CertificateModel.create({
+            title,
+            issuer,
+            date,
+            category,
+            status,
+            credentialId,
+            credentials: credentials || []
+        });
+
+        const stats = await getStatsDoc();
+        await addActivity(stats, `Added certificate: ${title}`, 'teal');
+
+        res.status(201).json({ success: true, data: newCert });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to create certificate' });
+    }
+});
+
+// Update Certificate (Admin)
+app.put('/api/admin/certificates/:id', verifyAdmin, async (req, res) => {
+    try {
+        const updated = await CertificateModel.findByIdAndUpdate(
+            req.params.id,
+            req.body,
+            { new: true, runValidators: true }
+        );
+        if (!updated) return res.status(404).json({ error: 'Certificate not found' });
+        res.status(200).json({ success: true, data: updated });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update certificate' });
+    }
+});
+
+// Delete Certificate (Admin)
+app.delete('/api/admin/certificates/:id', verifyAdmin, async (req, res) => {
+    try {
+        const cert = await CertificateModel.findByIdAndDelete(req.params.id);
+        if (!cert) return res.status(404).json({ error: 'Certificate not found' });
+
+        const stats = await getStatsDoc();
+        await addActivity(stats, `Deleted certificate: ${cert.title}`, 'red');
+
+        res.status(200).json({ success: true, message: 'Certificate deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete certificate' });
     }
 });
 
@@ -566,7 +736,7 @@ app.delete('/api/admin/messages/:id', verifyAdmin, async (req, res) => {
 const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT} - server.js:569`);
+        console.log(`Server is running on port ${PORT} - server.js:739`);
     });
 }
 

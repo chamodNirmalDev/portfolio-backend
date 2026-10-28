@@ -510,11 +510,63 @@ app.delete('/api/admin/skills/:id', verifyAdmin, async (req, res) => {
     }
 });
 
+// --- MESSAGES MANAGEMENT ROUTES (Admin Only) ---
+
+// 14. Get All Messages
+app.get('/api/admin/messages', verifyAdmin, async (req, res) => {
+    try {
+        const messages = await Message.find().sort({ createdAt: -1 });
+        const unreadCount = await Message.countDocuments({ isRead: false });
+        res.status(200).json({ success: true, data: messages, unreadCount });
+    } catch (err) {
+        console.error('Fetch messages error: - server.js:522', err);
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
+// 15. Mark Message as Read
+app.patch('/api/admin/messages/:id/read', verifyAdmin, async (req, res) => {
+    try {
+        const message = await Message.findByIdAndUpdate(
+            req.params.id,
+            { isRead: true },
+            { new: true }
+        );
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        const stats = await getStatsDoc();
+        stats.newMessages = await Message.countDocuments({ isRead: false });
+        await stats.save();
+
+        res.status(200).json({ success: true, data: message, unreadCount: stats.newMessages });
+    } catch (err) {
+        console.error('Mark read error: - server.js:543', err);
+        res.status(500).json({ error: 'Failed to update message status' });
+    }
+});
+
+// 16. Delete Message
+app.delete('/api/admin/messages/:id', verifyAdmin, async (req, res) => {
+    try {
+        const message = await Message.findByIdAndDelete(req.params.id);
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        const stats = await getStatsDoc();
+        stats.newMessages = await Message.countDocuments({ isRead: false });
+        await addActivity(stats, `Message from ${message.user_name} deleted`, 'red');
+
+        res.status(200).json({ success: true, message: 'Message deleted successfully', unreadCount: stats.newMessages });
+    } catch (err) {
+        console.error('Delete message error: - server.js:560', err);
+        res.status(500).json({ error: 'Failed to delete message' });
+    }
+});
+
 // --- Server Start ---
 const PORT = process.env.PORT || 5000;
 if (!process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT} - server.js:517`);
+        console.log(`Server is running on port ${PORT} - server.js:569`);
     });
 }
 
